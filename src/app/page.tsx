@@ -1,4 +1,23 @@
+"use client";
+
+import { useState, type FormEvent } from "react";
 import Image from "next/image";
+import { PlusIcon } from "lucide-react";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 
 const skills = [
   { name: "Digital Artwork", tone: "red" },
@@ -43,7 +62,9 @@ const categoryToneMap: Record<string, PillTone> = {
   생산성: "neutral",
 };
 
-const links: LinkItem[] = [
+const categories = Object.keys(categoryToneMap);
+
+const initialLinks: LinkItem[] = [
   {
     id: 1,
     title: "GitHub",
@@ -124,7 +145,91 @@ function formatDate(isoDate: string) {
   return isoDate.slice(0, 10).replace(/-/g, ".");
 }
 
+function normalizeUrl(rawUrl: string) {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function getDefaultFavicon(url: string) {
+  try {
+    const parsed = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=64`;
+  } catch {
+    return "/globe.svg";
+  }
+}
+
 export default function ProfilePage() {
+  const [links, setLinks] = useState<LinkItem[]>(initialLinks);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<string>("개발");
+  const [tagsInput, setTagsInput] = useState("");
+  const [favicon, setFavicon] = useState("");
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  function resetForm() {
+    setTitle("");
+    setUrl("");
+    setDescription("");
+    setCategory("개발");
+    setTagsInput("");
+    setFavicon("");
+    setIsFavorite(false);
+    setFormError("");
+  }
+
+  function handleAddLink(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    const trimmedTitle = title.trim();
+    const normalizedUrl = normalizeUrl(url);
+
+    if (!trimmedTitle) {
+      setFormError("채널(링크) 이름을 입력해주세요.");
+      return;
+    }
+
+    if (!normalizedUrl) {
+      setFormError("이동할 URL을 입력해주세요.");
+      return;
+    }
+
+    try {
+      new URL(normalizedUrl);
+    } catch {
+      setFormError("올바른 URL 형식을 입력해주세요. (예: https://example.com)");
+      return;
+    }
+
+    const parsedTags = tagsInput
+      .split(",")
+      .map((tag) => tag.trim().replace(/^#/, ""))
+      .filter(Boolean);
+
+    const newLink: LinkItem = {
+      id: links.length > 0 ? Math.max(...links.map((item) => item.id)) + 1 : 1,
+      title: trimmedTitle,
+      url: normalizedUrl,
+      description:
+        description.trim() || `${trimmedTitle} 바로가기 링크입니다.`,
+      category,
+      tags: parsedTags,
+      favicon: favicon.trim() || getDefaultFavicon(normalizedUrl),
+      isFavorite,
+      createdAt: new Date().toISOString(),
+    };
+
+    setLinks((prev) => [newLink, ...prev]);
+    resetForm();
+    setIsAddDialogOpen(false);
+  }
   return (
     <div className="min-h-screen bg-slate-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-50">
       {/* 상단 고정 Topbar (Sticky header + 이름 탭 및 문의하기 버튼 탭 배경 적용) */}
@@ -422,9 +527,210 @@ export default function ProfilePage() {
                     포트폴리오 및 소통 채널
                   </h2>
                 </div>
-                <span className="text-xs font-medium text-slate-500 tabular-nums dark:text-neutral-400">
-                  총 {links.length}개 채널
-                </span>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xs font-medium text-slate-500 tabular-nums dark:text-neutral-400">
+                    총 {links.length}개 채널
+                  </span>
+
+                  <Dialog
+                    open={isAddDialogOpen}
+                    onOpenChange={(open) => {
+                      setIsAddDialogOpen(open);
+                      if (!open) resetForm();
+                    }}
+                  >
+                    <DialogTrigger
+                      render={
+                        <Button
+                          type="button"
+                          className="h-8 rounded-full bg-rose-600 px-3.5 text-xs font-bold text-white shadow-xs hover:bg-rose-700 focus-visible:ring-rose-500/30"
+                        />
+                      }
+                    >
+                      <PlusIcon className="size-3.5" />
+                      새 채널 추가
+                    </DialogTrigger>
+
+                    <DialogContent className="rounded-2xl border border-slate-200/90 bg-white p-5 sm:max-w-md dark:border-neutral-800 dark:bg-neutral-900">
+                      <DialogHeader>
+                        <DialogTitle className="text-lg font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
+                          새 채널 링크 추가
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-slate-500 dark:text-neutral-400">
+                          포트폴리오 및 소통 채널 목록에 표시할 새 링크 정보를 입력해주세요.
+                        </DialogDescription>
+                      </DialogHeader>
+
+                      <form onSubmit={handleAddLink} className="mt-1 flex flex-col gap-4">
+                        {/* 채널 이름 */}
+                        <div className="flex flex-col gap-1.5">
+                          <Label
+                            htmlFor="link-title"
+                            className="text-xs font-bold text-slate-700 dark:text-neutral-200"
+                          >
+                            채널 이름 <span className="text-rose-600">*</span>
+                          </Label>
+                          <Input
+                            id="link-title"
+                            placeholder="예: GitHub, 개인 기술 블로그"
+                            value={title}
+                            onChange={(e) => {
+                              setTitle(e.target.value);
+                              if (formError) setFormError("");
+                            }}
+                            required
+                          />
+                        </div>
+
+                        {/* URL */}
+                        <div className="flex flex-col gap-1.5">
+                          <Label
+                            htmlFor="link-url"
+                            className="text-xs font-bold text-slate-700 dark:text-neutral-200"
+                          >
+                            이동 URL <span className="text-rose-600">*</span>
+                          </Label>
+                          <Input
+                            id="link-url"
+                            type="text"
+                            placeholder="https://example.com"
+                            value={url}
+                            onChange={(e) => {
+                              setUrl(e.target.value);
+                              if (formError) setFormError("");
+                            }}
+                            required
+                          />
+                        </div>
+
+                        {/* 카테고리 선택 (Pill 버튼) */}
+                        <div className="flex flex-col gap-1.5">
+                          <Label className="text-xs font-bold text-slate-700 dark:text-neutral-200">
+                            카테고리
+                          </Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {categories.map((cat) => {
+                              const tone = categoryToneMap[cat] ?? "neutral";
+                              const isSelected = category === cat;
+                              return (
+                                <button
+                                  key={cat}
+                                  type="button"
+                                  onClick={() => setCategory(cat)}
+                                  className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
+                                    isSelected
+                                      ? `${pillStyles[tone]} ring-2 ring-neutral-900 dark:ring-neutral-100`
+                                      : "bg-slate-100 text-slate-500 hover:bg-slate-200/70 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                                  }`}
+                                >
+                                  {cat}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* 설명 */}
+                        <div className="flex flex-col gap-1.5">
+                          <Label
+                            htmlFor="link-description"
+                            className="text-xs font-bold text-slate-700 dark:text-neutral-200"
+                          >
+                            채널 설명
+                          </Label>
+                          <Textarea
+                            id="link-description"
+                            placeholder="채널이나 작업물에 대한 간단한 소개를 입력해주세요."
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            rows={2}
+                          />
+                        </div>
+
+                        {/* 태그 */}
+                        <div className="flex flex-col gap-1.5">
+                          <Label
+                            htmlFor="link-tags"
+                            className="text-xs font-bold text-slate-700 dark:text-neutral-200"
+                          >
+                            태그 <span className="font-normal text-slate-400">(쉼표로 구분)</span>
+                          </Label>
+                          <Input
+                            id="link-tags"
+                            placeholder="예: frontend, portfolio, design"
+                            value={tagsInput}
+                            onChange={(e) => setTagsInput(e.target.value)}
+                          />
+                        </div>
+
+                        {/* 파비콘 URL (선택) */}
+                        <div className="flex flex-col gap-1.5">
+                          <Label
+                            htmlFor="link-favicon"
+                            className="text-xs font-bold text-slate-700 dark:text-neutral-200"
+                          >
+                            파비콘 URL{" "}
+                            <span className="font-normal text-slate-400">
+                              (비워두면 도메인 기준 자동 설정)
+                            </span>
+                          </Label>
+                          <Input
+                            id="link-favicon"
+                            placeholder="https://example.com/favicon.ico"
+                            value={favicon}
+                            onChange={(e) => setFavicon(e.target.value)}
+                          />
+                        </div>
+
+                        {/* 즐겨찾기 스위치 */}
+                        <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-3.5 py-2.5 dark:border-neutral-800 dark:bg-neutral-800/50">
+                          <div className="flex flex-col gap-0.5">
+                            <Label
+                              htmlFor="link-favorite"
+                              className="cursor-pointer text-xs font-bold text-neutral-900 dark:text-neutral-100"
+                            >
+                              ★ 즐겨찾기 채널로 표시
+                            </Label>
+                            <span className="text-[11px] text-slate-500 dark:text-neutral-400">
+                              카드 상단에 즐겨찾기 강조 뱃지를 함께 표시해요.
+                            </span>
+                          </div>
+                          <Switch
+                            id="link-favorite"
+                            checked={isFavorite}
+                            onCheckedChange={(checked) => setIsFavorite(checked)}
+                          />
+                        </div>
+
+                        {formError && (
+                          <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                            {formError}
+                          </p>
+                        )}
+
+                        <DialogFooter className="-mx-5 -mb-5 mt-1 rounded-b-2xl border-t border-slate-200/80 bg-slate-50/80 px-5 py-3.5 dark:border-neutral-800 dark:bg-neutral-900/80">
+                          <DialogClose
+                            render={
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="rounded-full px-4 text-xs font-bold"
+                              />
+                            }
+                          >
+                            취소
+                          </DialogClose>
+                          <Button
+                            type="submit"
+                            className="rounded-full bg-rose-600 px-4 text-xs font-bold text-white hover:bg-rose-700"
+                          >
+                            추가하기
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </div>
 
               {/* 2열 반응형 카드 그리드 (동일 행 높이 유지 & 하단 메타데이터 고정) */}
@@ -450,6 +756,9 @@ export default function ProfilePage() {
                               src={link.favicon}
                               alt={`${link.title} 파비콘`}
                               className="h-4.5 w-4.5 object-contain"
+                              onError={(e) => {
+                                e.currentTarget.src = "/globe.svg";
+                              }}
                             />
                           </span>
                           <div className="flex items-center gap-1.5">
