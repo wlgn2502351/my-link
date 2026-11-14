@@ -152,6 +152,23 @@ function normalizeUrl(rawUrl: string) {
   return `https://${trimmed}`;
 }
 
+function isValidWebUrl(rawUrl: string) {
+  const normalized = normalizeUrl(rawUrl);
+  if (!normalized || /\s/.test(rawUrl.trim())) return false;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+    return (
+      parsed.hostname === "localhost" ||
+      /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/.test(parsed.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function getDefaultFavicon(url: string) {
   try {
     const parsed = new URL(url);
@@ -160,6 +177,16 @@ function getDefaultFavicon(url: string) {
     return "/globe.svg";
   }
 }
+
+interface FormErrors {
+  title?: string;
+  url?: string;
+  description?: string;
+  tags?: string;
+  favicon?: string;
+}
+
+type FormField = keyof FormErrors;
 
 export default function ProfilePage() {
   const [links, setLinks] = useState<LinkItem[]>(initialLinks);
@@ -172,7 +199,114 @@ export default function ProfilePage() {
   const [tagsInput, setTagsInput] = useState("");
   const [favicon, setFavicon] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
-  const [formError, setFormError] = useState("");
+
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [touched, setTouched] = useState<Partial<Record<FormField, boolean>>>(
+    {}
+  );
+
+  function validateValues(values: {
+    title: string;
+    url: string;
+    description: string;
+    tagsInput: string;
+    favicon: string;
+  }): FormErrors {
+    const nextErrors: FormErrors = {};
+
+    // 1. 채널 이름 검증 (필수, 2~40자)
+    const trimmedTitle = values.title.trim();
+    if (!trimmedTitle) {
+      nextErrors.title = "채널 이름을 입력해주세요.";
+    } else if (trimmedTitle.length < 2) {
+      nextErrors.title = "채널 이름은 최소 2자 이상 입력해주세요.";
+    } else if (trimmedTitle.length > 40) {
+      nextErrors.title = "채널 이름은 40자 이내로 입력해주세요.";
+    }
+
+    // 2. 이동 URL 검증 (필수, 유효한 도메인/프로토콜, 중복 URL 방지)
+    const trimmedUrl = values.url.trim();
+    if (!trimmedUrl) {
+      nextErrors.url = "이동할 URL을 입력해주세요.";
+    } else if (!isValidWebUrl(trimmedUrl)) {
+      nextErrors.url =
+        "유효한 웹사이트 URL을 입력해주세요. (예: https://example.com)";
+    } else {
+      const normalized = normalizeUrl(trimmedUrl).replace(/\/+$/, "").toLowerCase();
+      const isDuplicate = links.some(
+        (item) => item.url.replace(/\/+$/, "").toLowerCase() === normalized
+      );
+      if (isDuplicate) {
+        nextErrors.url = "이미 등록된 채널 URL입니다.";
+      }
+    }
+
+    // 3. 채널 설명 검증 (선택, 최대 120자)
+    if (values.description.trim().length > 120) {
+      nextErrors.description = "채널 설명은 120자 이내로 입력해주세요.";
+    }
+
+    // 4. 태그 검증 (선택, 최대 5개, 태그당 최대 15자)
+    const parsedTags = values.tagsInput
+      .split(",")
+      .map((tag) => tag.trim().replace(/^#/, ""))
+      .filter(Boolean);
+
+    if (parsedTags.length > 5) {
+      nextErrors.tags = "태그는 최대 5개까지 입력할 수 있습니다.";
+    } else if (parsedTags.some((tag) => tag.length > 15)) {
+      nextErrors.tags = "각 태그는 15자 이내로 입력해주세요.";
+    }
+
+    // 5. 파비콘 URL 검증 (선택, 입력 시 유효한 URL 또는 로컬 절대 경로)
+    const trimmedFavicon = values.favicon.trim();
+    if (trimmedFavicon) {
+      const isLocalPath = trimmedFavicon.startsWith("/");
+      const isValidRemote =
+        /^https?:\/\//i.test(trimmedFavicon) && isValidWebUrl(trimmedFavicon);
+      if (!isLocalPath && !isValidRemote) {
+        nextErrors.favicon =
+          "올바른 파비콘 URL을 입력해주세요. (예: https://example.com/favicon.ico)";
+      }
+    }
+
+    return nextErrors;
+  }
+
+  function handleFieldBlur(field: FormField) {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+    const nextErrors = validateValues({
+      title,
+      url,
+      description,
+      tagsInput,
+      favicon,
+    });
+    setErrors(nextErrors);
+  }
+
+  function updateFieldAndValidate(
+    field: FormField,
+    nextStatePatch: Partial<{
+      title: string;
+      url: string;
+      description: string;
+      tagsInput: string;
+      favicon: string;
+    }>
+  ) {
+    const merged = {
+      title,
+      url,
+      description,
+      tagsInput,
+      favicon,
+      ...nextStatePatch,
+    };
+    if (touched[field] || errors[field]) {
+      setErrors(validateValues(merged));
+    }
+  }
 
   function resetForm() {
     setTitle("");
@@ -182,36 +316,44 @@ export default function ProfilePage() {
     setTagsInput("");
     setFavicon("");
     setIsFavorite(false);
-    setFormError("");
+    setErrors({});
+    setTouched({});
   }
 
   function handleAddLink(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
+    setTouched({
+      title: true,
+      url: true,
+      description: true,
+      tags: true,
+      favicon: true,
+    });
+
+    const validationErrors = validateValues({
+      title,
+      url,
+      description,
+      tagsInput,
+      favicon,
+    });
+    setErrors(validationErrors);
+
+    if (Object.keys(validationErrors).length > 0) {
+      return;
+    }
+
     const trimmedTitle = title.trim();
     const normalizedUrl = normalizeUrl(url);
-
-    if (!trimmedTitle) {
-      setFormError("채널(링크) 이름을 입력해주세요.");
-      return;
-    }
-
-    if (!normalizedUrl) {
-      setFormError("이동할 URL을 입력해주세요.");
-      return;
-    }
-
-    try {
-      new URL(normalizedUrl);
-    } catch {
-      setFormError("올바른 URL 형식을 입력해주세요. (예: https://example.com)");
-      return;
-    }
-
-    const parsedTags = tagsInput
-      .split(",")
-      .map((tag) => tag.trim().replace(/^#/, ""))
-      .filter(Boolean);
+    const parsedTags = Array.from(
+      new Set(
+        tagsInput
+          .split(",")
+          .map((tag) => tag.trim().replace(/^#/, ""))
+          .filter(Boolean)
+      )
+    );
 
     const newLink: LinkItem = {
       id: links.length > 0 ? Math.max(...links.map((item) => item.id)) + 1 : 1,
@@ -561,25 +703,47 @@ export default function ProfilePage() {
                         </DialogDescription>
                       </DialogHeader>
 
-                      <form onSubmit={handleAddLink} className="mt-1 flex flex-col gap-4">
+                      <form
+                        onSubmit={handleAddLink}
+                        noValidate
+                        className="mt-1 flex flex-col gap-3.5"
+                      >
                         {/* 채널 이름 */}
                         <div className="flex flex-col gap-1.5">
-                          <Label
-                            htmlFor="link-title"
-                            className="text-xs font-bold text-slate-700 dark:text-neutral-200"
-                          >
-                            채널 이름 <span className="text-rose-600">*</span>
-                          </Label>
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="link-title"
+                              className="text-xs font-bold text-slate-700 dark:text-neutral-200"
+                            >
+                              채널 이름 <span className="text-rose-600">*</span>
+                            </Label>
+                            <span
+                              className={`text-[11px] tabular-nums ${
+                                title.trim().length > 40
+                                  ? "font-bold text-rose-600 dark:text-rose-400"
+                                  : "text-slate-400 dark:text-neutral-500"
+                              }`}
+                            >
+                              {title.trim().length}/40
+                            </span>
+                          </div>
                           <Input
                             id="link-title"
                             placeholder="예: GitHub, 개인 기술 블로그"
                             value={title}
+                            aria-invalid={Boolean(errors.title)}
+                            onBlur={() => handleFieldBlur("title")}
                             onChange={(e) => {
-                              setTitle(e.target.value);
-                              if (formError) setFormError("");
+                              const nextValue = e.target.value;
+                              setTitle(nextValue);
+                              updateFieldAndValidate("title", { title: nextValue });
                             }}
-                            required
                           />
+                          {errors.title && (
+                            <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                              {errors.title}
+                            </p>
+                          )}
                         </div>
 
                         {/* URL */}
@@ -595,12 +759,19 @@ export default function ProfilePage() {
                             type="text"
                             placeholder="https://example.com"
                             value={url}
+                            aria-invalid={Boolean(errors.url)}
+                            onBlur={() => handleFieldBlur("url")}
                             onChange={(e) => {
-                              setUrl(e.target.value);
-                              if (formError) setFormError("");
+                              const nextValue = e.target.value;
+                              setUrl(nextValue);
+                              updateFieldAndValidate("url", { url: nextValue });
                             }}
-                            required
                           />
+                          {errors.url && (
+                            <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                              {errors.url}
+                            </p>
+                          )}
                         </div>
 
                         {/* 카테고리 선택 (Pill 버튼) */}
@@ -632,19 +803,43 @@ export default function ProfilePage() {
 
                         {/* 설명 */}
                         <div className="flex flex-col gap-1.5">
-                          <Label
-                            htmlFor="link-description"
-                            className="text-xs font-bold text-slate-700 dark:text-neutral-200"
-                          >
-                            채널 설명
-                          </Label>
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="link-description"
+                              className="text-xs font-bold text-slate-700 dark:text-neutral-200"
+                            >
+                              채널 설명
+                            </Label>
+                            <span
+                              className={`text-[11px] tabular-nums ${
+                                description.trim().length > 120
+                                  ? "font-bold text-rose-600 dark:text-rose-400"
+                                  : "text-slate-400 dark:text-neutral-500"
+                              }`}
+                            >
+                              {description.trim().length}/120
+                            </span>
+                          </div>
                           <Textarea
                             id="link-description"
                             placeholder="채널이나 작업물에 대한 간단한 소개를 입력해주세요."
                             value={description}
-                            onChange={(e) => setDescription(e.target.value)}
+                            aria-invalid={Boolean(errors.description)}
+                            onBlur={() => handleFieldBlur("description")}
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setDescription(nextValue);
+                              updateFieldAndValidate("description", {
+                                description: nextValue,
+                              });
+                            }}
                             rows={2}
                           />
+                          {errors.description && (
+                            <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                              {errors.description}
+                            </p>
+                          )}
                         </div>
 
                         {/* 태그 */}
@@ -653,14 +848,30 @@ export default function ProfilePage() {
                             htmlFor="link-tags"
                             className="text-xs font-bold text-slate-700 dark:text-neutral-200"
                           >
-                            태그 <span className="font-normal text-slate-400">(쉼표로 구분)</span>
+                            태그{" "}
+                            <span className="font-normal text-slate-400">
+                              (쉼표로 구분 · 최대 5개)
+                            </span>
                           </Label>
                           <Input
                             id="link-tags"
                             placeholder="예: frontend, portfolio, design"
                             value={tagsInput}
-                            onChange={(e) => setTagsInput(e.target.value)}
+                            aria-invalid={Boolean(errors.tags)}
+                            onBlur={() => handleFieldBlur("tags")}
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setTagsInput(nextValue);
+                              updateFieldAndValidate("tags", {
+                                tagsInput: nextValue,
+                              });
+                            }}
                           />
+                          {errors.tags && (
+                            <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                              {errors.tags}
+                            </p>
+                          )}
                         </div>
 
                         {/* 파비콘 URL (선택) */}
@@ -678,8 +889,21 @@ export default function ProfilePage() {
                             id="link-favicon"
                             placeholder="https://example.com/favicon.ico"
                             value={favicon}
-                            onChange={(e) => setFavicon(e.target.value)}
+                            aria-invalid={Boolean(errors.favicon)}
+                            onBlur={() => handleFieldBlur("favicon")}
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setFavicon(nextValue);
+                              updateFieldAndValidate("favicon", {
+                                favicon: nextValue,
+                              });
+                            }}
                           />
+                          {errors.favicon && (
+                            <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                              {errors.favicon}
+                            </p>
+                          )}
                         </div>
 
                         {/* 즐겨찾기 스위치 */}
@@ -701,12 +925,6 @@ export default function ProfilePage() {
                             onCheckedChange={(checked) => setIsFavorite(checked)}
                           />
                         </div>
-
-                        {formError && (
-                          <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
-                            {formError}
-                          </p>
-                        )}
 
                         <DialogFooter className="-mx-5 -mb-5 mt-1 rounded-b-2xl border-t border-slate-200/80 bg-slate-50/80 px-5 py-3.5 dark:border-neutral-800 dark:bg-neutral-900/80">
                           <DialogClose
