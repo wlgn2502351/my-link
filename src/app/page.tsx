@@ -14,12 +14,12 @@ export default function ProfilePage() {
 
         {/* 소속 뱃지 */}
         <span className="mb-5 rounded-full bg-zinc-100 px-3.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-          한양여대 시각미디어디자인과
+          시각미디어디자인과
         </span>
 
         {/* 소개글 */}
         <p className="leading-relaxed text-zinc-600 break-keep dark:text-zinc-400">
-          안녕하세요! 한양여대 시각미디어디자인과 재학생 김지후 입니다. 지금은 바이브 코딩을 배우는 중입니다.
+          안녕하세요! 시각미디어디자인과 재학생 김지후 입니다. 지금은 바이브 코딩을 배우는 중입니다.
         </p>
       </main>
     </div>
