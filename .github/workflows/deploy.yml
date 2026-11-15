@@ -42,7 +42,7 @@ jobs:
           S_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
         run: |
           if [ -n "$ENV_FILE" ]; then
-            printf '%s\n' "$ENV_FILE" > .env.production
+            printf '%s\n' "$ENV_FILE" | tr -d '\r' > .env.production
           else
             [ -n "$S_API_KEY" ] && export NEXT_PUBLIC_FIREBASE_API_KEY="$S_API_KEY"
             [ -n "$S_AUTH_DOMAIN" ] && export NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="$S_AUTH_DOMAIN"

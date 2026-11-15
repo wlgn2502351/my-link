@@ -151,7 +151,11 @@ export default function LandingPage() {
         );
       } else {
         console.error("Failed to sign in with Google:", error);
-        setAuthError("Google 로그인 중 오류가 발생했습니다. 다시 시도해주세요.");
+        setAuthError(
+          code
+            ? `Google 로그인 중 오류가 발생했습니다. (${code})`
+            : "Google 로그인 중 오류가 발생했습니다. 다시 시도해주세요."
+        );
       }
     } finally {
       setIsLoggingIn(false);
@@ -244,10 +248,10 @@ export default function LandingPage() {
 
       <main className="flex-1">
         {authError && (
-          <div className="mx-auto max-w-6xl px-4 pt-4 sm:px-6 lg:px-8">
+          <div className="sticky top-16 z-40 mx-auto max-w-6xl px-4 pt-3 sm:px-6 lg:px-8">
             <div
               role="alert"
-              className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-300"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/95 px-4 py-3 text-xs font-medium text-rose-700 shadow-md backdrop-blur-xs dark:border-rose-900/60 dark:bg-rose-950/95 dark:text-rose-300"
             >
               <div className="flex items-center gap-2">
                 <AlertTriangleIcon className="size-4 shrink-0 text-rose-600 dark:text-rose-400" />
