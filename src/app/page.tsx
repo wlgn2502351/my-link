@@ -102,6 +102,7 @@ export default function LandingPage() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
@@ -111,6 +112,12 @@ export default function LandingPage() {
   async function handleStartWithGoogle() {
     if (user) {
       router.push("/dashboard");
+      return;
+    }
+    if (!auth) {
+      setAuthError(
+        "Firebase 설정이 완료되지 않았습니다. GitHub Secrets에 NEXT_PUBLIC_FIREBASE_* 환경 변수를 등록해주세요."
+      );
       return;
     }
     if (isLoggingIn) return;

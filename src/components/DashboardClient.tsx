@@ -286,6 +286,11 @@ export function DashboardClient() {
       // localStorage 접근 불가 시 무시
     }
 
+    if (!auth) {
+      setIsAuthReady(true);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser?.uid) {
@@ -336,6 +341,12 @@ export function DashboardClient() {
   }, []);
 
   async function handleGoogleLogin() {
+    if (!auth) {
+      setAuthError(
+        "Firebase 설정이 완료되지 않았습니다. GitHub Secrets에 NEXT_PUBLIC_FIREBASE_* 환경 변수를 등록해주세요."
+      );
+      return;
+    }
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     setAuthError(null);
@@ -381,6 +392,7 @@ export function DashboardClient() {
   }
 
   async function handleLogout() {
+    if (!auth) return;
     try {
       setAuthError(null);
       await signOut(auth);
@@ -393,6 +405,10 @@ export function DashboardClient() {
   const targetUid = user?.uid ?? lastKnownUid ?? "anonymous";
 
   const fetchLinks = useCallback(async () => {
+    if (!db) {
+      setIsLoadingLinks(false);
+      return;
+    }
     try {
       const linksRef = collection(db, "users", targetUid, "links");
       const q = query(linksRef, orderBy("createdAt", "desc"));
@@ -415,7 +431,7 @@ export function DashboardClient() {
   }, [targetUid, user]);
 
   useEffect(() => {
-    if (!isAuthReady) return;
+    if (!isAuthReady || !db) return;
 
     fetchLinks();
 
@@ -450,7 +466,7 @@ export function DashboardClient() {
   }, [fetchLinks, isAuthReady, targetUid, user]);
 
   useEffect(() => {
-    if (!isAuthReady) return;
+    if (!isAuthReady || !db) return;
     if (targetUid === "anonymous") {
       setProfile(DEFAULT_PROFILE);
       return;

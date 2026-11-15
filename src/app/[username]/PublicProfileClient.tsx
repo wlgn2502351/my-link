@@ -33,6 +33,11 @@ export function PublicProfileClient({ username }: PublicProfileClientProps) {
     let isCancelled = false;
 
     async function loadPublicProfile() {
+      if (!db) {
+        setIsNotFound(true);
+        setIsLoading(false);
+        return;
+      }
       setIsLoading(true);
       setIsNotFound(false);
 
