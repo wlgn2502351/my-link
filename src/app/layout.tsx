@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "김지후 | 프로필",
-  description: "안녕하세요! 시각미디어디자인과 재학생 김지후 입니다. 지금은 바이브 코딩을 배우는 중입니다.",
+  title: "마이링크 (MyLink) | 나만의 링크 허브",
+  description:
+    "흩어진 모든 링크를 하나의 페이지에. 링크 관리, 클릭 통계, 나만의 개인 URL까지 한 번에 만들어보세요.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
