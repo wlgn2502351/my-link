@@ -5,6 +5,10 @@ interface UsernamePageProps {
   params: Promise<{ username: string }>;
 }
 
+export function generateStaticParams() {
+  return [{ username: "jihoo" }];
+}
+
 async function PublicProfileLoader({ params }: UsernamePageProps) {
   const { username } = await params;
   return <PublicProfileClient username={decodeURIComponent(username)} />;
