@@ -1,8 +1,16 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { PlusIcon } from "lucide-react";
+import {
+  addDoc,
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import {
   Dialog,
   DialogClose,
@@ -33,7 +41,7 @@ const skills = [
 type PillTone = "red" | "teal" | "green" | "blue" | "neutral";
 
 interface LinkItem {
-  id: number;
+  id: string | number;
   title: string;
   url: string;
   description: string;
@@ -204,6 +212,54 @@ export default function ProfilePage() {
   const [touched, setTouched] = useState<Partial<Record<FormField, boolean>>>(
     {}
   );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const linksRef = collection(db, "users", "anonymous", "links");
+    const q = query(linksRef, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const firestoreLinks: LinkItem[] = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title ?? "",
+            url: data.url ?? "",
+            description: data.description ?? "",
+            category: data.category ?? "개발",
+            tags: Array.isArray(data.tags) ? data.tags : [],
+            favicon: data.favicon || getDefaultFavicon(data.url ?? ""),
+            isFavorite: Boolean(data.isFavorite),
+            createdAt:
+              typeof data.createdAt === "string"
+                ? data.createdAt
+                : data.createdAt?.toDate?.()?.toISOString?.() ??
+                  new Date().toISOString(),
+          };
+        });
+
+        const firestoreUrls = new Set(
+          firestoreLinks.map((item) =>
+            item.url.replace(/\/+$/, "").toLowerCase()
+          )
+        );
+        const remainingInitialLinks = initialLinks.filter(
+          (item) =>
+            !firestoreUrls.has(item.url.replace(/\/+$/, "").toLowerCase())
+        );
+
+        setLinks([...firestoreLinks, ...remainingInitialLinks]);
+      },
+      (error) => {
+        console.error("Failed to fetch links from Firestore:", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   function validateValues(values: {
     title: string;
@@ -318,9 +374,10 @@ export default function ProfilePage() {
     setIsFavorite(false);
     setErrors({});
     setTouched({});
+    setSubmitError(null);
   }
 
-  function handleAddLink(e: FormEvent<HTMLFormElement>) {
+  async function handleAddLink(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     setTouched({
@@ -355,8 +412,7 @@ export default function ProfilePage() {
       )
     );
 
-    const newLink: LinkItem = {
-      id: links.length > 0 ? Math.max(...links.map((item) => item.id)) + 1 : 1,
+    const newLinkData = {
       title: trimmedTitle,
       url: normalizedUrl,
       description:
@@ -368,9 +424,30 @@ export default function ProfilePage() {
       createdAt: new Date().toISOString(),
     };
 
-    setLinks((prev) => [newLink, ...prev]);
-    resetForm();
-    setIsAddDialogOpen(false);
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+
+      const linksRef = collection(db, "users", "anonymous", "links");
+      const docRef = await addDoc(linksRef, newLinkData);
+
+      setLinks((prev) => {
+        if (prev.some((item) => String(item.id) === docRef.id)) {
+          return prev;
+        }
+        return [{ id: docRef.id, ...newLinkData }, ...prev];
+      });
+
+      resetForm();
+      setIsAddDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to add link to Firestore:", error);
+      setSubmitError(
+        "Firestore에 링크를 저장하는 중 오류가 발생했습니다. 다시 시도해주세요."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
   return (
     <div className="min-h-screen bg-slate-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-50">
@@ -926,12 +1003,19 @@ export default function ProfilePage() {
                           />
                         </div>
 
+                        {submitError && (
+                          <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                            {submitError}
+                          </p>
+                        )}
+
                         <DialogFooter className="-mx-5 -mb-5 mt-1 rounded-b-2xl border-t border-slate-200/80 bg-slate-50/80 px-5 py-3.5 dark:border-neutral-800 dark:bg-neutral-900/80">
                           <DialogClose
                             render={
                               <Button
                                 type="button"
                                 variant="outline"
+                                disabled={isSubmitting}
                                 className="rounded-full px-4 text-xs font-bold"
                               />
                             }
@@ -940,9 +1024,10 @@ export default function ProfilePage() {
                           </DialogClose>
                           <Button
                             type="submit"
+                            disabled={isSubmitting}
                             className="rounded-full bg-rose-600 px-4 text-xs font-bold text-white hover:bg-rose-700"
                           >
-                            추가하기
+                            {isSubmitting ? "저장 중..." : "추가하기"}
                           </Button>
                         </DialogFooter>
                       </form>
