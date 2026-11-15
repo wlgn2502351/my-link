@@ -227,13 +227,32 @@ export function PublicProfileClient({ username }: PublicProfileClientProps) {
                     </p>
                   </div>
                 </div>
+
+                {/* 주요 행동 버튼 (Pill CTA) */}
+                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                  <a
+                    href="#channels"
+                    className="inline-flex h-10 items-center justify-center rounded-full bg-rose-600 px-4 text-sm font-bold text-white shadow-xs transition-all hover:bg-rose-700 active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-rose-500/30 focus-visible:outline-none"
+                  >
+                    작업물 살펴보기
+                  </a>
+                  <a
+                    href="mailto:hello@example.com"
+                    className="inline-flex h-10 items-center justify-center rounded-full border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100 active:scale-[0.98] focus-visible:ring-4 focus-visible:ring-slate-400/30 focus-visible:outline-none dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                  >
+                    협업 제안하기
+                  </a>
+                </div>
               </div>
             </div>
           </section>
 
           {/* 우측 (7컬럼): 링크 리스트 */}
           <div className="flex flex-col gap-4 lg:col-span-7 lg:gap-8">
-            <section className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+            <section
+              id="channels"
+              className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-4 dark:border-neutral-800">
                 <div>
                   <span className="text-xs font-bold tracking-wide text-slate-500 uppercase dark:text-neutral-400">
