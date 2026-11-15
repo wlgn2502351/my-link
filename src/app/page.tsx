@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { PlusIcon } from "lucide-react";
 import {
   addDoc,
   collection,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -41,7 +42,7 @@ const skills = [
 type PillTone = "red" | "teal" | "green" | "blue" | "neutral";
 
 interface LinkItem {
-  id: string | number;
+  id: string;
   title: string;
   url: string;
   description: string;
@@ -71,75 +72,6 @@ const categoryToneMap: Record<string, PillTone> = {
 };
 
 const categories = Object.keys(categoryToneMap);
-
-const initialLinks: LinkItem[] = [
-  {
-    id: 1,
-    title: "GitHub",
-    url: "https://github.com",
-    description: "소프트웨어 개발 및 버전 관리를 위한 코드 호스팅 플랫폼",
-    category: "개발",
-    tags: ["git", "code", "opensource"],
-    favicon: "https://github.com/favicon.ico",
-    isFavorite: true,
-    createdAt: "2026-11-01T09:00:00Z",
-  },
-  {
-    id: 2,
-    title: "MDN Web Docs",
-    url: "https://developer.mozilla.org/ko/",
-    description: "HTML, CSS, JavaScript 등 웹 표준 기술 공식 레퍼런스 문서",
-    category: "문서",
-    tags: ["web", "frontend", "reference"],
-    favicon: "https://developer.mozilla.org/favicon-48x48.png",
-    isFavorite: true,
-    createdAt: "2026-11-03T14:20:00Z",
-  },
-  {
-    id: 3,
-    title: "Figma",
-    url: "https://www.figma.com",
-    description: "실시간 협업을 지원하는 웹 기반 UI/UX 디자인 및 프로토타이핑 툴",
-    category: "디자인",
-    tags: ["ui", "ux", "design", "prototype"],
-    favicon: "https://static.figma.com/app/icon/1/favicon.png",
-    isFavorite: false,
-    createdAt: "2026-11-05T11:15:00Z",
-  },
-  {
-    id: 4,
-    title: "Stack Overflow",
-    url: "https://stackoverflow.com",
-    description: "전 세계 개발자들의 프로그래밍 질의응답 커뮤니티",
-    category: "커뮤니티",
-    tags: ["qna", "programming", "debugging"],
-    favicon: "https://cdn.sstatic.net/Sites/stackoverflow/Img/favicon.ico",
-    isFavorite: false,
-    createdAt: "2026-11-08T16:45:00Z",
-  },
-  {
-    id: 5,
-    title: "Notion",
-    url: "https://www.notion.so",
-    description: "메모, 문서, 프로젝트 관리 및 위키를 하나로 통합한 올인원 워크스페이스",
-    category: "생산성",
-    tags: ["note", "wiki", "productivity"],
-    favicon: "https://www.notion.so/images/favicon.ico",
-    isFavorite: true,
-    createdAt: "2026-11-10T08:30:00Z",
-  },
-  {
-    id: 6,
-    title: "Tailwind CSS",
-    url: "https://tailwindcss.com",
-    description: "빠른 UI 구축을 위한 유틸리티 퍼스트 CSS 프레임워크",
-    category: "개발",
-    tags: ["css", "styling", "frontend"],
-    favicon: "https://tailwindcss.com/favicons/favicon-32x32.png",
-    isFavorite: false,
-    createdAt: "2026-11-12T19:10:00Z",
-  },
-];
 
 function formatDomain(url: string) {
   try {
@@ -186,6 +118,52 @@ function getDefaultFavicon(url: string) {
   }
 }
 
+function parseCreatedAt(value: unknown): string {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "toDate" in value &&
+    typeof (value as { toDate: () => Date }).toDate === "function"
+  ) {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return new Date(0).toISOString();
+}
+
+function mapDocsToLinks(
+  docs: Array<{ id: string; data: () => Record<string, unknown> }>
+): LinkItem[] {
+  const items: LinkItem[] = docs.map((doc) => {
+    const data = doc.data();
+    const rawUrl = typeof data.url === "string" ? data.url : "";
+    const rawFavicon = typeof data.favicon === "string" ? data.favicon : "";
+
+    return {
+      id: doc.id,
+      title: typeof data.title === "string" ? data.title : "",
+      url: rawUrl,
+      description: typeof data.description === "string" ? data.description : "",
+      category: typeof data.category === "string" ? data.category : "개발",
+      tags: Array.isArray(data.tags)
+        ? data.tags.filter((tag): tag is string => typeof tag === "string")
+        : [],
+      favicon: rawFavicon || getDefaultFavicon(rawUrl),
+      isFavorite: Boolean(data.isFavorite),
+      createdAt: parseCreatedAt(data.createdAt),
+    };
+  });
+
+  return items.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
 interface FormErrors {
   title?: string;
   url?: string;
@@ -197,7 +175,8 @@ interface FormErrors {
 type FormField = keyof FormErrors;
 
 export default function ProfilePage() {
-  const [links, setLinks] = useState<LinkItem[]>(initialLinks);
+  const [links, setLinks] = useState<LinkItem[]>([]);
+  const [isLoadingLinks, setIsLoadingLinks] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   const [title, setTitle] = useState("");
@@ -215,51 +194,39 @@ export default function ProfilePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const fetchLinks = useCallback(async () => {
+    try {
+      const linksRef = collection(db, "users", "anonymous", "links");
+      const q = query(linksRef, orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
+      setLinks(mapDocsToLinks(snapshot.docs));
+    } catch (error) {
+      console.error("Failed to fetch links from Firestore:", error);
+    } finally {
+      setIsLoadingLinks(false);
+    }
+  }, []);
+
   useEffect(() => {
+    fetchLinks();
+
     const linksRef = collection(db, "users", "anonymous", "links");
     const q = query(linksRef, orderBy("createdAt", "desc"));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const firestoreLinks: LinkItem[] = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            title: data.title ?? "",
-            url: data.url ?? "",
-            description: data.description ?? "",
-            category: data.category ?? "개발",
-            tags: Array.isArray(data.tags) ? data.tags : [],
-            favicon: data.favicon || getDefaultFavicon(data.url ?? ""),
-            isFavorite: Boolean(data.isFavorite),
-            createdAt:
-              typeof data.createdAt === "string"
-                ? data.createdAt
-                : data.createdAt?.toDate?.()?.toISOString?.() ??
-                  new Date().toISOString(),
-          };
-        });
-
-        const firestoreUrls = new Set(
-          firestoreLinks.map((item) =>
-            item.url.replace(/\/+$/, "").toLowerCase()
-          )
-        );
-        const remainingInitialLinks = initialLinks.filter(
-          (item) =>
-            !firestoreUrls.has(item.url.replace(/\/+$/, "").toLowerCase())
-        );
-
-        setLinks([...firestoreLinks, ...remainingInitialLinks]);
+        setLinks(mapDocsToLinks(snapshot.docs));
+        setIsLoadingLinks(false);
       },
       (error) => {
-        console.error("Failed to fetch links from Firestore:", error);
+        console.error("Failed to subscribe to links from Firestore:", error);
+        setIsLoadingLinks(false);
       }
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [fetchLinks]);
 
   function validateValues(values: {
     title: string;
@@ -432,11 +399,16 @@ export default function ProfilePage() {
       const docRef = await addDoc(linksRef, newLinkData);
 
       setLinks((prev) => {
-        if (prev.some((item) => String(item.id) === docRef.id)) {
+        if (prev.some((item) => item.id === docRef.id)) {
           return prev;
         }
-        return [{ id: docRef.id, ...newLinkData }, ...prev];
+        return [{ id: docRef.id, ...newLinkData }, ...prev].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
       });
+
+      await fetchLinks();
 
       resetForm();
       setIsAddDialogOpen(false);
@@ -1037,98 +1009,129 @@ export default function ProfilePage() {
               </div>
 
               {/* 2열 반응형 카드 그리드 (동일 행 높이 유지 & 하단 메타데이터 고정) */}
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {links.map((link, index) => {
-                  const num = String(index + 1).padStart(2, "0");
-                  const badgeTone = categoryToneMap[link.category] ?? "neutral";
-
-                  return (
-                    <a
-                      key={link.id}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:ring-4 focus-visible:ring-blue-600/25 focus-visible:outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
+              {isLoadingLinks ? (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="flex h-48 animate-pulse flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50/60 p-5 dark:border-neutral-800 dark:bg-neutral-800/40"
                     >
-                      {/* 상단: 아이콘 + 뱃지 + 타이틀/설명/태그 */}
-                      <div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition-colors group-hover:bg-blue-50 group-hover:text-blue-700 dark:bg-neutral-800 dark:text-neutral-200 dark:group-hover:bg-blue-950/60 dark:group-hover:text-blue-400">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={link.favicon}
-                              alt={`${link.title} 파비콘`}
-                              className="h-4.5 w-4.5 object-contain"
-                              onError={(e) => {
-                                e.currentTarget.src = "/globe.svg";
-                              }}
-                            />
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            {link.isFavorite && (
-                              <span
-                                className={`${pillStyles.red} inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold`}
-                              >
-                                ★ 즐겨찾기
-                              </span>
-                            )}
-                            <span
-                              className={`${pillStyles[badgeTone]} rounded-full px-2.5 py-0.5 text-[11px] font-bold`}
-                            >
-                              {link.category}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="h-9 w-9 rounded-full bg-slate-200 dark:bg-neutral-700" />
+                          <div className="h-5 w-14 rounded-full bg-slate-200 dark:bg-neutral-700" />
+                        </div>
+                        <div className="h-3 w-28 rounded bg-slate-200 dark:bg-neutral-700" />
+                        <div className="h-5 w-40 rounded bg-slate-200 dark:bg-neutral-700" />
+                        <div className="h-4 w-full rounded bg-slate-200 dark:bg-neutral-700" />
+                      </div>
+                      <div className="h-4 w-24 rounded bg-slate-200 dark:bg-neutral-700" />
+                    </div>
+                  ))}
+                </div>
+              ) : links.length === 0 ? (
+                <div className="mt-4 flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-6 py-12 text-center dark:border-neutral-800 dark:bg-neutral-800/30">
+                  <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                    등록된 채널 링크가 없습니다.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-neutral-400">
+                    우측 상단의 &lsquo;새 채널 추가&rsquo; 버튼을 눌러 첫 번째 링크를 추가해보세요.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {links.map((link, index) => {
+                    const num = String(index + 1).padStart(2, "0");
+                    const badgeTone = categoryToneMap[link.category] ?? "neutral";
+
+                    return (
+                      <a
+                        key={link.id}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:ring-4 focus-visible:ring-blue-600/25 focus-visible:outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700"
+                      >
+                        {/* 상단: 아이콘 + 뱃지 + 타이틀/설명/태그 */}
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition-colors group-hover:bg-blue-50 group-hover:text-blue-700 dark:bg-neutral-800 dark:text-neutral-200 dark:group-hover:bg-blue-950/60 dark:group-hover:text-blue-400">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={link.favicon}
+                                alt={`${link.title} 파비콘`}
+                                className="h-4.5 w-4.5 object-contain"
+                                onError={(e) => {
+                                  e.currentTarget.src = "/globe.svg";
+                                }}
+                              />
                             </span>
+                            <div className="flex items-center gap-1.5">
+                              {link.isFavorite && (
+                                <span
+                                  className={`${pillStyles.red} inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold`}
+                                >
+                                  ★ 즐겨찾기
+                                </span>
+                              )}
+                              <span
+                                className={`${pillStyles[badgeTone]} rounded-full px-2.5 py-0.5 text-[11px] font-bold`}
+                              >
+                                {link.category}
+                              </span>
+                            </div>
                           </div>
+
+                          <p className="mt-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase tabular-nums dark:text-neutral-400">
+                            {num} · {formatDomain(link.url)} · {formatDate(link.createdAt)}
+                          </p>
+                          <h3 className="mt-1 text-lg leading-snug font-bold text-neutral-900 dark:text-neutral-50">
+                            {link.title}
+                          </h3>
+                          <p className="mt-1.5 text-[13px] leading-relaxed font-normal text-slate-600 break-keep dark:text-neutral-300">
+                            {link.description}
+                          </p>
+
+                          {link.tags.length > 0 && (
+                            <div className="mt-2.5 flex flex-wrap gap-1.5">
+                              {link.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-neutral-800 dark:text-neutral-400"
+                                >
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
-                        <p className="mt-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase tabular-nums dark:text-neutral-400">
-                          {num} · {formatDomain(link.url)} · {formatDate(link.createdAt)}
-                        </p>
-                        <h3 className="mt-1 text-lg leading-snug font-bold text-neutral-900 dark:text-neutral-50">
-                          {link.title}
-                        </h3>
-                        <p className="mt-1.5 text-[13px] leading-relaxed font-normal text-slate-600 break-keep dark:text-neutral-300">
-                          {link.description}
-                        </p>
-
-                        {link.tags.length > 0 && (
-                          <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {link.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-neutral-800 dark:text-neutral-400"
-                              >
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 하단 고정 메타데이터 푸터 */}
-                      <div className="mt-4 flex items-center justify-between border-t border-slate-200/80 pt-3 dark:border-neutral-800">
-                        <span className="text-[13px] font-bold text-blue-700 dark:text-blue-400">
-                          사이트 바로가기
-                        </span>
-                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full text-blue-700 transition-all group-hover:translate-x-0.5 group-hover:bg-blue-50 dark:text-blue-400 dark:group-hover:bg-blue-950/60">
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={1.5}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
-                            />
-                          </svg>
-                        </span>
-                      </div>
-                    </a>
-                  );
-                })}
-              </div>
+                        {/* 하단 고정 메타데이터 푸터 */}
+                        <div className="mt-4 flex items-center justify-between border-t border-slate-200/80 pt-3 dark:border-neutral-800">
+                          <span className="text-[13px] font-bold text-blue-700 dark:text-blue-400">
+                            사이트 바로가기
+                          </span>
+                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full text-blue-700 transition-all group-hover:translate-x-0.5 group-hover:bg-blue-50 dark:text-blue-400 dark:group-hover:bg-blue-950/60">
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={1.5}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+                              />
+                            </svg>
+                          </span>
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           </div>
         </div>
